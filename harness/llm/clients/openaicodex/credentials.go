@@ -59,7 +59,7 @@ func (config Config) credentials() (credentials, error) {
 		}
 	}
 	if token == "" {
-		return credentials{}, errors.New("codex access token must be set; use OPENAI_CODEX_ACCESS_TOKEN or a ChatGPT-authenticated Codex auth file")
+		return credentials{}, errors.New("codex access token must be set; run `codex login` or use OPENAI_CODEX_ACCESS_TOKEN")
 	}
 	if strings.HasPrefix(token, "sk-") || !headerValue(token) {
 		return credentials{}, errors.New("codex requires a subscription access token, not an API key or invalid header value")
@@ -69,7 +69,7 @@ func (config Config) credentials() (credentials, error) {
 		return credentials{}, err
 	}
 	if expires != 0 && time.Now().Unix() >= expires {
-		return credentials{}, errors.New("codex access token has expired; renew credentials externally (interactive login and token refresh are not implemented)")
+		return credentials{}, errors.New("codex access token has expired; run `codex login` again")
 	}
 	if accountID == "" {
 		accountID = claimAccount
@@ -85,7 +85,7 @@ func (config Config) credentials() (credentials, error) {
 func readAuthFile(path string) (string, string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", "", fmt.Errorf("open Codex auth file (provide existing ChatGPT credentials; login is not implemented): %w", err)
+		return "", "", fmt.Errorf("open Codex auth file (run `codex login` first): %w", err)
 	}
 	defer func() { _ = file.Close() }()
 	info, err := file.Stat()

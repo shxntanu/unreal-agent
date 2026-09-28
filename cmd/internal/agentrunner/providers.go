@@ -1,7 +1,10 @@
 package agentrunner
 
 import (
+	"strings"
+
 	"github.com/unreallabsai/unreal-agent/harness/llm/clients/fireworks"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/litellm"
 	"github.com/unreallabsai/unreal-agent/harness/llm/clients/ollama"
 	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openai"
 	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openaicodex"
@@ -36,6 +39,19 @@ func DefaultProviders() []Provider {
 				}
 				config.BaseURL, config.MaxAttempts = baseURL, &maxAttempts
 				return openaicodex.NewClient(config)
+			},
+		},
+		{
+			Name:    "litellm",
+			BaseURL: litellm.BaseURL,
+			NewClient: func(_, baseURL string, maxAttempts int, getenv func(string) string) (Client, error) {
+				apiKey := strings.TrimSpace(getenv("LITELLM_API_KEY"))
+				if apiKey == "" {
+					apiKey = strings.TrimSpace(getenv(llmAPIKeyEnvironment))
+				}
+				return litellm.NewClient(litellm.Config{
+					APIKey: apiKey, BaseURL: baseURL, MaxAttempts: &maxAttempts,
+				})
 			},
 		},
 
