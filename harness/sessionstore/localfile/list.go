@@ -2,10 +2,12 @@ package localfile
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -45,12 +47,32 @@ func (store *Store) listSessionEntries(ctx context.Context, entries []fs.DirEntr
 		if err != nil {
 			continue
 		}
+		displayName := ""
+		if encoded, readErr := os.ReadFile(filepath.Join(store.directory, entry.Name())); readErr == nil {
+			displayName = decodeSessionName(encoded)
+		}
 		sessions = append(sessions, sessionstore.SessionInfo{
-			ID: id, LastUpdatedAt: info.ModTime().UTC(),
+			ID: id, Name: displayName, LastUpdatedAt: info.ModTime().UTC(),
 		})
 	}
 	slices.SortFunc(sessions, func(left, right sessionstore.SessionInfo) int {
 		return strings.Compare(string(left.ID), string(right.ID))
 	})
 	return sessions, nil
+}
+
+func decodeSessionName(encoded []byte) string {
+	line, _, found := strings.Cut(string(encoded), "\n")
+	if !found {
+		return ""
+	}
+	var record logRecord
+	if err := json.Unmarshal([]byte(line), &record); err != nil || record.Type != recordSession {
+		return ""
+	}
+	var header sessionRecord
+	if err := json.Unmarshal(record.Data, &header); err != nil {
+		return ""
+	}
+	return header.Session.Name
 }

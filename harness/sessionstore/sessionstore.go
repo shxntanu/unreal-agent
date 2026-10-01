@@ -66,6 +66,7 @@ type Snapshot struct {
 
 type SessionInfo struct {
 	ID            session.ID
+	Name          string
 	LastUpdatedAt time.Time
 }
 
@@ -82,6 +83,11 @@ type ResumeState struct {
 }
 
 // Store does not serialize methods for the same session ID.
+// Renamer is implemented by stores that support changing a session's display name without changing its stable ID.
+type Renamer interface {
+	Rename(context.Context, session.ID, string) (Snapshot, error)
+}
+
 type Store interface {
 	// AddObserver and RemoveObserver are not safe for concurrent use with each
 	// other or with methods that persist items.

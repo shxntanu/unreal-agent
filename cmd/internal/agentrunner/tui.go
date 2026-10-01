@@ -81,6 +81,7 @@ func newTUIConfig(
 
 	sessionID := session.ID(uuid.New().String())
 	var history []sessionstore.Item
+	sessionName := ""
 	if resume != "" {
 		id, err := resolveTUISession(ctx, store, resume)
 		if err != nil {
@@ -91,6 +92,11 @@ func newTUIConfig(
 		if err != nil {
 			return harnessui.Config{}, err
 		}
+		snapshot, err := store.Inspect(ctx, id)
+		if err != nil {
+			return harnessui.Config{}, err
+		}
+		sessionName = snapshot.Session.Name
 	}
 
 	submit := func(runContext context.Context, id, prompt string) <-chan harnessui.Event {
@@ -124,6 +130,7 @@ func newTUIConfig(
 		Input:         input,
 		Output:        output,
 		SessionID:     string(sessionID),
+		SessionName:   sessionName,
 		InitialPrompt: initialPrompt,
 		Workspace:     workspaceDirectory,
 		Store:         store,

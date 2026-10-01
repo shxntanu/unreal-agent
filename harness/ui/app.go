@@ -4,13 +4,16 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/unreallabsai/unreal-agent/harness/session"
 	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
 	uilist "github.com/unreallabsai/unreal-agent/harness/ui/list"
 )
@@ -35,6 +38,7 @@ type Config struct {
 	Input         io.Reader
 	Output        io.Writer
 	SessionID     string
+	SessionName   string
 	InitialPrompt string
 	Workspace     string
 	Submit        Submit
@@ -82,6 +86,7 @@ type model struct {
 	optimisticInputs map[string]int
 	sessions         sessionPicker
 	status           string
+	sessionName      string
 	width            int
 	height           int
 }
@@ -94,6 +99,11 @@ type eventMsg struct {
 
 type runStartedMsg struct {
 	events <-chan Event
+}
+
+type sessionRenamedMsg struct {
+	name string
+	err  error
 }
 
 var (
@@ -163,15 +173,16 @@ func newModel(ctx context.Context, cfg Config) model {
 	transcript := uilist.NewList()
 	transcript.SetGap(1)
 	m := model{
-		ctx:        ctx,
-		cfg:        cfg,
-		input:      input,
-		transcript: transcript,
-		spinner:    spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(spinnerStyle)),
-		toolCalls:  make(map[string]*transcriptItem),
-		status:     "ready",
-		width:      80,
-		height:     24,
+		ctx:         ctx,
+		cfg:         cfg,
+		input:       input,
+		transcript:  transcript,
+		spinner:     spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(spinnerStyle)),
+		toolCalls:   make(map[string]*transcriptItem),
+		status:      "ready",
+		sessionName: cfg.SessionName,
+		width:       80,
+		height:      24,
 	}
 	m.resize()
 	for _, item := range cfg.History {
@@ -246,6 +257,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, waitForEvent(m.run)
 		}
 		return m, nil
+	case sessionRenamedMsg:
+		if msg.err != nil {
+			m.status = "rename failed"
+			m.appendEntry(entry{role: "error", text: msg.err.Error()})
+			return m, nil
+		}
+		m.sessionName = msg.name
+		m.status = "renamed"
+		m.appendEntry(entry{role: "status", text: "Session renamed to " + msg.name + "."})
+		return m, nil
 	case sessionsListedMsg:
 		if msg.requestID != m.sessions.requestID || !m.sessions.open {
 			return m, nil
@@ -264,7 +285,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessions.err = msg.err
 			return m, nil
 		}
-		m.replaceSession(msg.id, msg.items)
+		m.replaceSession(msg.id, msg.name, msg.items)
 		return m, m.input.SetFocused(true)
 	case tea.MouseClickMsg:
 		if m.sessions.open {
@@ -361,10 +382,20 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		return m.openSessions()
 	case "/new":
-		m.replaceSession(newSessionID(), nil)
+		m.replaceSession(newSessionID(), "", nil)
 		return m, m.input.SetFocused(true)
 	case "/quit", "/exit":
 		return m, tea.Quit
+	}
+	if text == "/rename" || strings.HasPrefix(text, "/rename ") {
+		name := strings.TrimSpace(strings.TrimPrefix(text, "/rename"))
+		if name == "" {
+			m.input.Reset()
+			m.appendEntry(entry{role: "error", text: "Usage: /rename <session name>"})
+			return m, nil
+		}
+		m.input.Reset()
+		return m, m.renameSession(name)
 	}
 	prompt, ok := m.input.Submit()
 	if !ok {
@@ -384,6 +415,29 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(func() tea.Msg {
 		return runStartedMsg{events: submit(runContext, id, prompt)}
 	}, func() tea.Msg { return m.spinner.Tick() })
+}
+
+func (m model) renameSession(name string) tea.Cmd {
+	store, ok := m.cfg.Store.(sessionstore.Renamer)
+	if !ok {
+		return func() tea.Msg { return sessionRenamedMsg{err: errors.New("session storage does not support renaming")} }
+	}
+	ctx, id := m.ctx, session.ID(m.cfg.SessionID)
+	return func() tea.Msg {
+		_, err := store.Rename(ctx, id, name)
+		if errors.Is(err, fs.ErrNotExist) {
+			// A fresh TUI session is created lazily on its first prompt. Make
+			// /rename useful before that first prompt as well.
+			if _, createErr := m.cfg.Store.Create(ctx, id); createErr != nil {
+				return sessionRenamedMsg{name: name, err: fmt.Errorf("create session for rename: %w", createErr)}
+			}
+			_, err = store.Rename(ctx, id, name)
+		}
+		if err != nil {
+			return sessionRenamedMsg{name: name, err: fmt.Errorf("rename session: %w", err)}
+		}
+		return sessionRenamedMsg{name: name}
+	}
 }
 
 func waitForEvent(events <-chan Event) tea.Cmd {
@@ -422,8 +476,12 @@ func (m model) View() tea.View {
 		transcript = m.sessions.render(width, m.transcript.Height())
 	}
 	transcript = fitRows(transcript, width, m.transcript.Height())
-	input := m.input.View(false, false, false, "", 0, shortID(m.cfg.SessionID))
-	footer := "pgup/pgdn scroll · tab focus · ctrl+r resume · /new · ctrl+c quit"
+	sessionLabel := m.sessionName
+	if strings.TrimSpace(sessionLabel) == "" {
+		sessionLabel = shortID(m.cfg.SessionID)
+	}
+	input := m.input.View(false, false, false, "", 0, sessionLabel)
+	footer := "pgup/pgdn scroll · tab focus · ctrl+r resume · /new · /rename · ctrl+c quit"
 	if m.running {
 		footer = "pgup/pgdn scroll · tab focus · ctrl+c stop · draft your next message"
 	} else if m.mainFocus {

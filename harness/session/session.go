@@ -17,6 +17,7 @@ const (
 type Session struct {
 	ID        ID
 	CreatedAt time.Time
+	Name      string `json:",omitempty"`
 }
 
 type Turn struct {

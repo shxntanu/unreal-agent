@@ -28,6 +28,7 @@ type sessionsListedMsg struct {
 
 type sessionLoadedMsg struct {
 	id        string
+	name      string
 	items     []sessionstore.Item
 	requestID uint64
 	err       error
@@ -81,7 +82,7 @@ func (m model) handleSessionKey(key string) (tea.Model, tea.Cmd) {
 		requestID, ctx, store := m.sessions.requestID, m.ctx, m.cfg.Store
 		return m, func() tea.Msg {
 			items, err := readSessionHistory(ctx, store, id)
-			return sessionLoadedMsg{id: id, items: items, requestID: requestID, err: err}
+			return sessionLoadedMsg{id: id, name: m.sessions.items[m.sessions.selected].Name, items: items, requestID: requestID, err: err}
 		}
 	}
 	return m, nil
@@ -106,8 +107,9 @@ func readSessionHistory(ctx context.Context, store sessionstore.Store, id string
 	}
 }
 
-func (m *model) replaceSession(id string, items []sessionstore.Item) {
+func (m *model) replaceSession(id, name string, items []sessionstore.Item) {
 	m.cfg.SessionID = id
+	m.sessionName = name
 	m.cfg.History = nil
 	m.transcript.SetItems()
 	m.transcript.ScrollToTop()
@@ -144,7 +146,11 @@ func (s sessionPicker) render(width, height int) string {
 	lines = append(lines, "")
 	for i := start; i < min(start+visible, len(s.items)); i++ {
 		item := s.items[i]
-		text := fmt.Sprintf("  %s  %s", item.LastUpdatedAt.Local().Format("Jan 02 15:04"), item.ID)
+		label := item.Name
+		if strings.TrimSpace(label) == "" {
+			label = string(item.ID)
+		}
+		text := fmt.Sprintf("  %s  %s", item.LastUpdatedAt.Local().Format("Jan 02 15:04"), label)
 		if i == s.selected {
 			text = "›" + strings.TrimPrefix(text, " ")
 			text = brandStyle.Render(text)

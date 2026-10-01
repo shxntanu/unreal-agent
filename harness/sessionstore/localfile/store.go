@@ -2,6 +2,7 @@
 package localfile
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -88,6 +89,46 @@ func (store *Store) Inspect(ctx context.Context, id session.ID) (sessionstore.Sn
 	if err != nil {
 		return sessionstore.Snapshot{}, err
 	}
+	return state.Snapshot, nil
+}
+
+// Rename changes only the display name stored in the session header. The
+// session ID and append-only history remain unchanged.
+func (store *Store) Rename(ctx context.Context, id session.ID, name string) (sessionstore.Snapshot, error) {
+	if err := validateSessionID(id); err != nil {
+		return sessionstore.Snapshot{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return sessionstore.Snapshot{}, fmt.Errorf("session name is empty")
+	}
+	if err := context.Cause(ctx); err != nil {
+		return sessionstore.Snapshot{}, err
+	}
+	state, _, err := store.readState(ctx, id)
+	if err != nil {
+		return sessionstore.Snapshot{}, err
+	}
+	encoded, err := os.ReadFile(store.sessionPath(id))
+	if err != nil {
+		return sessionstore.Snapshot{}, fmt.Errorf("read session %q for rename: %w", id, err)
+	}
+	newline := bytes.IndexByte(encoded, '\n')
+	if newline < 0 {
+		return sessionstore.Snapshot{}, fmt.Errorf("session %q has no header record", id)
+	}
+	state.Snapshot.Session.Name = name
+	header, err := encodeRecord(recordSession, sessionRecord{Version: formatVersion, Session: state.Snapshot.Session})
+	if err != nil {
+		return sessionstore.Snapshot{}, fmt.Errorf("encode session rename: %w", err)
+	}
+	updated := append(header, encoded[newline+1:]...)
+	if err := publishFile(store.directory, store.sessionPath(id), updated); err != nil {
+		store.evictCachedWriteState(id)
+		return sessionstore.Snapshot{}, fmt.Errorf("rename session %q: %w", id, err)
+	}
+	state.sessionHead.Snapshot.Session.Name = name
+	store.putCachedWriteState(id, state.sessionHead, int64(len(updated)))
 	return state.Snapshot, nil
 }
 

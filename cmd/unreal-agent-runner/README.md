@@ -26,7 +26,7 @@ unreal-agent-runner -tui
 Use Enter to send, Shift+Enter for a newline, Tab to focus the transcript, and
 Page Up/Page Down or the mouse wheel to scroll. Ctrl+C cancels an active turn
 and quits when idle. Ctrl+R or `/resume` opens session selection, `/new` starts
-a fresh session, and `/quit` exits. Sessions persist across prompts and runs.
+a fresh session, `/rename <name>` renames the current session, and `/quit` exits. Sessions persist across prompts and runs.
 
 Alt+Enter and Ctrl+J also insert newlines in terminals that cannot distinguish
 Shift+Enter. Home/End, word movement, deletion, selection, and multiline paste
