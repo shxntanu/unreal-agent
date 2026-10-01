@@ -119,6 +119,7 @@ func externalInputText(payload jsontext.Value) string {
 }
 
 func (m *model) consumeResponse(response llm.Response) {
+	m.tokenCount += response.Usage.TotalTokens()
 	if response.Failure != nil {
 		failure := strings.TrimSpace(response.Failure.Message)
 		code := strings.TrimSpace(response.Failure.Code)

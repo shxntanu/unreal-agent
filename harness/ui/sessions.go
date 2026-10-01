@@ -115,6 +115,7 @@ func (m *model) replaceSession(id, name string, items []sessionstore.Item) {
 	m.transcript.ScrollToTop()
 	m.toolCalls = make(map[string]*transcriptItem)
 	m.optimisticInputs = nil
+	m.tokenCount = 0
 	for _, item := range items {
 		m.consumeItem(item, true)
 	}

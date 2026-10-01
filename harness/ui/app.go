@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/spinner"
@@ -87,6 +88,7 @@ type model struct {
 	sessions         sessionPicker
 	status           string
 	sessionName      string
+	tokenCount       int64
 	width            int
 	height           int
 }
@@ -515,14 +517,28 @@ func fitRows(content string, width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
+func formatTokenCount(value int64) string {
+	if value < 0 {
+		value = 0
+	}
+	digits := strconv.FormatInt(value, 10)
+	for index := len(digits) - 3; index > 0; index -= 3 {
+		digits = digits[:index] + "," + digits[index:]
+	}
+	return digits
+}
+
 func (m model) statusView() string {
+	var status string
 	if m.running {
-		return m.spinner.View() + " " + mutedStyle.Render(m.status)
+		status = m.spinner.View() + " " + mutedStyle.Render(m.status)
+	} else if m.status == "run failed" {
+		status = errorStyle.Render("× failed")
+	} else {
+		status = statusStyle.Render("● ready")
 	}
-	if m.status == "run failed" {
-		return errorStyle.Render("× failed")
-	}
-	return statusStyle.Render("● ready")
+	tokens := mutedStyle.Render(formatTokenCount(m.tokenCount) + " tokens")
+	return lipgloss.JoinHorizontal(lipgloss.Left, tokens, mutedStyle.Render("  "), status)
 }
 
 func (m *model) scroll(key string) bool {

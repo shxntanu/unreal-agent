@@ -134,6 +134,20 @@ type Usage struct {
 	Raw                   jsontext.Value `json:",omitzero"`
 }
 
+// TotalTokens returns the number of tokens consumed by a model response.
+// InputTokens and OutputTokens already include their respective cached and
+// reasoning-token components, so those detail fields must not be added again.
+func (usage Usage) TotalTokens() int64 {
+	input, output := usage.InputTokens, usage.OutputTokens
+	if input < 0 {
+		input = 0
+	}
+	if output < 0 {
+		output = 0
+	}
+	return input + output
+}
+
 type Failure struct {
 	Code    string
 	Message string
