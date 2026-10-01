@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -168,6 +169,9 @@ func Run(
 		prompt = &value
 		return nil
 	})
+	tui := flags.Bool("tui", false, "run the interactive terminal UI")
+	resume := flags.String("resume", "", "resume a TUI session by ID, or use latest")
+	codexLogin := flags.Bool("codex-login", false, "run `codex login` and exit")
 	sessionDirectory := flags.String("session-directory", "", "directory containing session files; defaults to $XDG_STATE_HOME/unreal-agent/sessions, or $HOME/.local/state/unreal-agent/sessions")
 	workspaceDirectory := flags.String("workspace", ".", "agent workspace and Bash working directory")
 	logDirectory := flags.String("log-directory", "", "optional session JSONL log directory; unset writes only to stdout")
@@ -180,6 +184,50 @@ func Run(
 			return errors.Join(err, usageErr)
 		}
 		return err
+	}
+	resumeSet := flagWasSet(flags, "resume")
+	if *codexLogin {
+		if *tui || resumeSet || prompt != nil || flags.NArg() != 0 {
+			return errors.New("-codex-login cannot be combined with -tui, -resume, a prompt, or a request")
+		}
+		login := exec.CommandContext(ctx, "codex", "login")
+		login.Stdin, login.Stdout, login.Stderr = input, output, flagOutput
+		if err := login.Run(); err != nil {
+			return fmt.Errorf("run codex login: %w", err)
+		}
+		return nil
+	}
+	if *tui {
+		if flags.NArg() != 0 {
+			return errors.New("-tui cannot be combined with a positional JSON request")
+		}
+		if *toolHeartbeatInterval < 0 {
+			return errors.New("tool heartbeat interval must not be negative")
+		}
+		if resumeSet && strings.TrimSpace(*resume) == "" {
+			return errors.New("-resume requires a session ID or latest")
+		}
+		initialPrompt := ""
+		if prompt != nil {
+			initialPrompt = *prompt
+		}
+		return runTUI(
+			ctx,
+			getenv,
+			environ,
+			input,
+			output,
+			initialPrompt,
+			*sessionDirectory,
+			*workspaceDirectory,
+			*logDirectory,
+			*toolHeartbeatInterval,
+			*resume,
+			config,
+		)
+	}
+	if resumeSet {
+		return errors.New("-resume requires -tui")
 	}
 	if flags.NArg() > 1 {
 		return errors.New("expected at most one positional JSON request")
