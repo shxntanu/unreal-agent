@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"strings"
 
 	"charm.land/bubbles/v2/textarea"
@@ -12,8 +13,8 @@ import (
 const (
 	compactChatBoxInputHeight     = 3
 	comfortableChatBoxInputHeight = 5
-	composerFrameHeight           = 3 // mode row and border
-	composerFrameWidth            = 4 // border and padding
+	composerStatusHeight          = 1
+	composerPaddingWidth          = 2
 )
 
 // composer is used to compose messages, run slash commands, etc.
@@ -25,8 +26,8 @@ type composer struct {
 
 func newComposer() composer {
 	input := textarea.New()
-	input.Placeholder = "Message the Unreal Agent..."
-	input.Prompt = "┃ "
+	input.Placeholder = "Message the agent..."
+	input.Prompt = "› "
 	input.ShowLineNumbers = false
 	input.EndOfBufferCharacter = ' '
 	// The viewport scrolls, but the text itself should not have a small line cap.
@@ -36,46 +37,42 @@ func newComposer() composer {
 	input.Focus()
 
 	styles := textarea.DefaultDarkStyles()
-	styles.Focused.Base = styles.Focused.Base.Background(tuiBackground)
+	styles.Focused.Base = styles.Focused.Base.Background(tuiSurface2)
 	styles.Focused.Text = lipgloss.NewStyle().
-		Background(tuiBackground).
+		Background(tuiSurface2).
 		Foreground(tuiInk)
 	styles.Focused.Prompt = lipgloss.NewStyle().
-		Background(tuiBackground).
-		Foreground(tuiAccentAgent).
+		Background(tuiSurface2).
+		Foreground(tuiAccentTool).
 		Bold(true)
 	styles.Focused.CursorLine = lipgloss.NewStyle().Background(tuiSurface2)
 	styles.Focused.Placeholder = lipgloss.NewStyle().
-		Background(tuiBackground).
-		Foreground(tuiSubtle).
-		Italic(true)
+		Background(tuiSurface2).
+		Foreground(tuiMuted)
 	styles.Focused.EndOfBuffer = lipgloss.NewStyle().
-		Background(tuiBackground).
+		Background(tuiSurface2).
 		Foreground(tuiSurface2)
-	styles.Blurred.Base = styles.Blurred.Base.Background(tuiBackground)
+	styles.Blurred.Base = styles.Blurred.Base.Background(tuiSurface2)
 	styles.Blurred.Text = lipgloss.NewStyle().
-		Background(tuiBackground).
+		Background(tuiSurface2).
 		Foreground(tuiInk)
 	styles.Blurred.Prompt = lipgloss.NewStyle().
-		Background(tuiBackground).
+		Background(tuiSurface2).
 		Foreground(tuiSubtle)
-	styles.Blurred.CursorLine = lipgloss.NewStyle().Background(tuiBackground)
+	styles.Blurred.CursorLine = lipgloss.NewStyle().Background(tuiSurface2)
 	styles.Blurred.Placeholder = lipgloss.NewStyle().
-		Background(tuiBackground).
-		Foreground(tuiSubtle).
-		Italic(true)
+		Background(tuiSurface2).
+		Foreground(tuiMuted)
 	styles.Blurred.EndOfBuffer = lipgloss.NewStyle().
-		Background(tuiBackground).
+		Background(tuiSurface2).
 		Foreground(tuiSurface2)
-	styles.Cursor.Color = tuiAccentAgent
+	styles.Cursor.Color = tuiAccentTool
 	input.SetStyles(styles)
 
 	return composer{
 		input: input,
 		style: lipgloss.NewStyle().
-			Background(tuiBackground).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tuiLineStrong).
+			Background(tuiSurface2).
 			Foreground(tuiInk).
 			Padding(0, 1),
 	}
@@ -163,82 +160,56 @@ func (c *composer) handleCommandBackspace(key tea.KeyPressMsg) bool {
 }
 
 func (c composer) View(slashMode bool, skillMode bool, fileMode bool, skillPrefix string,
-	frame int, sessionLabel string) string {
-	style := c.style
+	_ int, sessionLabel string) string {
 	modeColor := tuiAccentAgent
 	modeLabel := "message"
-	modeHint := "enter sends · shift+enter newline"
-	modeMark := "✦"
+	modeHint := "enter to send · shift+enter for newline"
 	if slashMode {
 		modeColor = tuiAccentCommand
 		modeLabel = "command"
 		modeHint = "tab completes · enter runs"
-		modeMark = activeSelectorMarker(frame)
 	} else if skillMode {
 		modeColor = tuiAccentTool
-		modeLabel = "! skill"
+		modeLabel = "skill"
 		modeHint = "tab completes · enter selects · esc closes"
-		modeMark = activeSelectorMarker(frame)
 	} else if fileMode {
 		modeColor = tuiAccentInfo
-		modeLabel = "@ file"
+		modeLabel = "file"
 		modeHint = "arrows select · enter pastes · esc closes"
-		modeMark = activeSelectorMarker(frame)
+	}
+	if !slashMode && strings.TrimSpace(skillPrefix) != "" {
+		modeColor = tuiAccentTool
 	}
 
-	mode := lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		lipgloss.NewStyle().
-			Background(tuiSurface).
-			Foreground(modeColor).
-			Bold(true).
-			Padding(0, 1).
-			Render(modeMark+" "+modeLabel),
-		" ",
-		lipgloss.NewStyle().
-			Background(tuiBackground).
-			Foreground(tuiMuted).
-			Render(modeHint),
-	)
-	mode = c.modeLine(mode, sessionLabel)
-	if slashMode {
-		style = style.BorderForeground(tuiAccentCommand)
-	} else if skillMode || strings.TrimSpace(skillPrefix) != "" {
-		style = style.BorderForeground(tuiAccentTool)
-	} else if fileMode {
-		style = style.BorderForeground(tuiAccentInfo)
-	}
-
-	content := lipgloss.JoinVertical(lipgloss.Left, mode, c.inputView())
-	return style.Width(max(0, c.width)).Render(content)
+	status := c.modeLine(modeLabel, modeHint, modeColor, sessionLabel)
+	content := lipgloss.JoinVertical(lipgloss.Left, c.inputView(), status)
+	return c.style.Width(max(0, c.width)).Render(content)
 }
 
-func (c composer) modeLine(left string, sessionLabel string) string {
-	contentWidth := max(1, c.width-composerFrameWidth)
+func (c composer) modeLine(modeLabel string, modeHint string, modeColor color.Color,
+	sessionLabel string) string {
+	contentWidth := max(1, c.width-composerPaddingWidth)
 	sessionLabel = strings.TrimSpace(sessionLabel)
 	if sessionLabel == "" {
 		sessionLabel = "untitled"
 	}
-	badgePrefix := "session "
-	availableLabel := max(1, contentWidth-ansi.StringWidth(left)-ansi.StringWidth(badgePrefix)-4)
-	badgeLabel := fitHeaderText(sessionLabel, availableLabel)
-	badge := lipgloss.NewStyle().
-		Background(tuiSurface).
-		Foreground(tuiSubtle).
-		Padding(0, 1).
-		Render(badgePrefix) +
-		lipgloss.NewStyle().
-			Background(tuiSurface).
-			Foreground(tuiAccentAgent).
-			Bold(true).
-			Render(badgeLabel)
-
+	mode := lipgloss.NewStyle().Foreground(modeColor).Bold(true).Render(modeLabel)
+	hint := lipgloss.NewStyle().Foreground(tuiMuted).Render(modeHint)
+	left := mode + "  " + hint
 	leftWidth := ansi.StringWidth(left)
-	badgeWidth := ansi.StringWidth(badge)
-	if leftWidth+badgeWidth+1 > contentWidth {
+	sessionPrefix := lipgloss.NewStyle().Foreground(tuiSubtle).Render("session ")
+	prefixWidth := ansi.StringWidth(sessionPrefix)
+	if leftWidth+prefixWidth+2 > contentWidth {
 		return fitHeaderText(left, contentWidth)
 	}
-	return left + strings.Repeat(" ", max(1, contentWidth-leftWidth-badgeWidth)) + badge
+	availableLabel := max(1, contentWidth-leftWidth-prefixWidth-1)
+	session := sessionPrefix + lipgloss.NewStyle().Foreground(tuiAccentAgent).Bold(true).
+		Render(fitHeaderText(sessionLabel, availableLabel))
+	sessionWidth := ansi.StringWidth(session)
+	if leftWidth+sessionWidth+1 > contentWidth {
+		return fitHeaderText(left, contentWidth)
+	}
+	return left + strings.Repeat(" ", max(1, contentWidth-leftWidth-sessionWidth)) + session
 }
 
 func (c composer) inputView() string {
@@ -326,7 +297,7 @@ func (c *composer) Reset() {
 
 func (c *composer) SetWidth(width int) {
 	c.width = max(width, 0)
-	c.input.SetWidth(max(c.width-composerFrameWidth, 1))
+	c.input.SetWidth(max(c.width-composerPaddingWidth, 1))
 }
 
 func (c *composer) SetDensity(density densityMode) {
@@ -337,13 +308,13 @@ func (c *composer) SetDensity(density densityMode) {
 	c.input.SetHeight(height)
 }
 
-// SetHeight sets the total composer height, including its mode row and border.
+// SetHeight sets the total composer height, including its status row.
 func (c *composer) SetHeight(height int) {
-	c.input.SetHeight(max(height-composerFrameHeight, 1))
+	c.input.SetHeight(max(height-composerStatusHeight, 1))
 }
 
 func (c composer) Height() int {
-	return c.input.Height() + composerFrameHeight
+	return c.input.Height() + composerStatusHeight
 }
 
 func (c *composer) Submit() (string, bool) {

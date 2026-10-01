@@ -274,7 +274,7 @@ func renderRichLines(text string, width int, textStyle lipgloss.Style) []string 
 	return strings.Split(rendered, "\n")
 }
 
-const maxToolOutputLines = 20
+const maxToolOutputLines = 10
 
 func renderToolEntry(item entry, width int) string {
 	title := strings.TrimSpace(item.title)

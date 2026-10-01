@@ -356,6 +356,8 @@ func mouseScroll(button tea.MouseButton) int {
 	return 0
 }
 
+const composerSectionGapRows = 1
+
 func (m *model) resize() {
 	width := max(m.width, 1)
 	if m.height < 32 {
@@ -366,7 +368,8 @@ func (m *model) resize() {
 	m.input.SetWidth(m.width)
 	m.input.SetHeight(max(4, min(m.input.Height(), m.height-5)))
 	follow := m.transcript.Len() == 0 || m.transcript.Height() <= 0 || m.transcript.AtBottom()
-	m.transcript.SetSize(width, max(m.height-m.input.Height()-3, 1))
+	reservedRows := 3 + 2*composerSectionGapRows // header, header gap, footer, and composer gaps
+	m.transcript.SetSize(width, max(m.height-m.input.Height()-reservedRows, 1))
 	if follow {
 		m.transcript.ScrollToBottom()
 	}
@@ -487,7 +490,7 @@ func (m model) View() tea.View {
 	} else if m.mainFocus {
 		footer = "↑/↓ scroll · home/end · tab or esc compose · ctrl+r resume · q quit"
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, header, "", transcript, input, mutedStyle.Render(footer))
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", transcript, "", input, "", mutedStyle.Render(footer))
 	content = fitRows(content, width, height)
 	view := tea.NewView(content)
 	view.AltScreen = true
